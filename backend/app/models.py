@@ -24,7 +24,7 @@ class Word(Base):
     example = Column(Text, nullable=True)
     audio_link = Column(String, nullable=True)
     course_id = Column(Integer, ForeignKey("courses.id"))
-    is_difficult = Column(Boolean, default=False
+    is_difficult = Column(Boolean, default=False）
     course = relationship("Course", back_populates="words")
     learning_data = relationship("LearningData", back_populates="word", uselist=False)
 
