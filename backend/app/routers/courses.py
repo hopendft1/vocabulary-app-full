@@ -13,6 +13,18 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+@router.delete("/{course_id}", response_model=schemas.Course)
+def delete_course(course_id: int, db: Session = Depends(database.get_db)):
+    course = db.query(models.Course).filter(models.Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # 删除关联的单词
+    db.query(models.Word).filter(models.Word.course_id == course_id).delete()
+    db.delete(course)
+    db.commit()
+    return course
+
 @router.post("/", response_model=schemas.Course)
 def create_course(course: schemas.CourseCreate, db: Session = Depends(get_db)):
     db_course = models.Course(**course.dict())

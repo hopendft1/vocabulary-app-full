@@ -19,8 +19,8 @@ const MainTabScreen = () => {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-          if (route.name === 'Home') {
-            iconName = focused ? 'home' : 'home-outline';
+          if (route.name === 'Courses') { // 改名为 Courses
+            iconName = focused ? 'school' : 'school-outline'; // 更合适的图标
           } else if (route.name === 'Learn') {
             iconName = focused ? 'book' : 'book-outline';
           } else if (route.name === 'Practice') {
@@ -41,9 +41,9 @@ const MainTabScreen = () => {
       })}
     >
       <Tab.Screen 
-        name="Home" 
+        name="Courses" // 改名
         component={HomeScreen} 
-        options={{ tabBarLabel: '首页' }}
+        options={{ tabBarLabel: '我的课程' }} // 改标签
       />
       <Tab.Screen 
         name="Learn" 

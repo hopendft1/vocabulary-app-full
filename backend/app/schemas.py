@@ -23,6 +23,7 @@ class WordBase(BaseModel):
     pinyin: str
     definition: str
     example: Optional[str] = None
+    is_difficult: Optional[bool] = False
     audio_link: Optional[str] = None
 
 class WordCreate(WordBase):

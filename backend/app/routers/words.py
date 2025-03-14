@@ -12,6 +12,15 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+@router.delete("/{word_id}", response_model=schemas.Word)
+def delete_word(word_id: int, db: Session = Depends(database.get_db)):
+    word = db.query(models.Word).filter(models.Word.id == word_id).first()
+    if not word:
+        raise HTTPException(status_code=404, detail="Word not found")
+    db.delete(word)
+    db.commit()
+    return word
+
 @router.get("/", response_model=List[schemas.WordWithLearningData])
 def read_words(skip: int = 0, limit: int = 100, course_id: int = None, db: Session = Depends(get_db)):
     query = db.query(models.Word)
@@ -33,6 +42,16 @@ def read_word(word_id: int, db: Session = Depends(get_db)):
     if db_word is None:
         raise HTTPException(status_code=404, detail="Word not found")
     return db_word
+
+@router.put("/{word_id}/mark-difficult", response_model=schemas.Word)
+def mark_word_as_difficult(word_id: int, db: Session = Depends(database.get_db)):
+    word = db.query(models.Word).filter(models.Word.id == word_id).first()
+    if not word:
+        raise HTTPException(status_code=404, detail="Word not found")
+    word.is_difficult = True
+    db.commit()
+    db.refresh(word)
+    return word
 
 @router.post("/{word_id}/update-learning-data", response_model=schemas.LearningData)
 def update_learning_data(

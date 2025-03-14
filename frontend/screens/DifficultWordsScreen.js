@@ -62,6 +62,38 @@ const DifficultWordsScreen = ({ navigation }) => {
     }
   };
 
+  const handleDeleteWord = async (wordId) => {
+    Alert.alert(
+      '确认删除',
+      '确定要删除这个单词吗？您将不再学习此单词。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_URL}/words/${wordId}`, {
+                method: 'DELETE',
+              });
+
+              if (!response.ok) {
+                throw new Error('删除单词失败');
+              }
+
+              fetchWords();
+              if (currentIndex >= words.length - 1) {
+                setCurrentIndex(currentIndex - 1);
+              }
+            } catch (error) {
+              Alert.alert('错误', error.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const showPinyinAnimation = () => {
     // 拼音淡入弹跳动画
     Animated.parallel([

@@ -89,6 +89,55 @@ const QuickPracticeScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleDeleteWord = async (wordId) => {
+    Alert.alert(
+      '确认删除',
+      '确定要删除这个单词吗？您将不再学习此单词。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_URL}/words/${wordId}`, {
+                method: 'DELETE',
+              });
+
+              if (!response.ok) {
+                throw new Error('删除单词失败');
+              }
+
+              fetchWords();
+              if (currentIndex >= words.length - 1) {
+                setCurrentIndex(currentIndex - 1);
+              }
+            } catch (error) {
+              Alert.alert('错误', error.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleMarkAsDifficult = async (wordId) => {
+    try {
+      const response = await fetch(`${API_URL}/words/${wordId}/mark-difficult`, {
+        method: 'PUT',
+      });
+
+      if (!response.ok) {
+        throw new Error('标记为难词失败');
+      }
+
+      fetchWords(); // 刷新单词列表
+      Alert.alert('成功', '单词已标记为难词');
+    } catch (error) {
+      Alert.alert('错误', error.message);
+    }
+  };
+
   const generateOptions = () => {
     if (words.length < 4) return;
     
