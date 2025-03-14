@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react
 import { LinearGradient } from 'expo-linear-gradient';
 import CSVImport from '../components/CSVImport';
 
-const API_URL = 'http://192.168.0.176:8000'; // For Android emulator
+const API_URL = 'https://vocabulary-app-full.onrender.com'; // For Android emulator
 
 const CourseScreen = ({ route, navigation }) => {
   const { courseId, courseTitle } = route.params;

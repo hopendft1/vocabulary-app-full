@@ -24,6 +24,7 @@ app.include_router(courses.router)
 app.include_router(words.router)
 
 @app.get("/")
+@app.head("/")
 def read_root():
     return {"message": "Welcome to Vocabulary Learning API"}
 

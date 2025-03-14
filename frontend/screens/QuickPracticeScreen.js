@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_URL = 'http://192.168.0.176:8000'; // For Android emulator
+const API_URL = 'https://vocabulary-app-full.onrender.com'; // For Android emulator
 const PRACTICE_TIME = 60; // 60秒限时
 const PRACTICE_QUESTIONS = 50; // 50题目标
 

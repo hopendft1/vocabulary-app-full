@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-nat
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_URL = 'http://192.168.0.176:8000'; // For Android emulator
+const API_URL = 'https://vocabulary-app-full.onrender.com'; // For Android emulator
 
 const StatsScreen = () => {
   const [loading, setLoading] = useState(true);
