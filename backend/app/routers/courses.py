@@ -50,13 +50,13 @@ def read_course(course_id: int, db: Session = Depends(get_db)):
 @router.post("/{course_id}/upload-csv", response_model=schemas.CourseWithWords)
 def upload_csv(course_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     # Check if course exists
-    db_course = db.query(models.Course).filter(models.Course.id == course_id).first()
+    db_course = db.query(models.Course).options(joinedload(models.Course.words)).filter(models.Course.id == course_id).first()
     if db_course is None:
         raise HTTPException(status_code=404, detail="Course not found")
-    
-    # Read and parse CSV file
+
     try:
-        contents = file.file.read().decode('utf-8')
+        # Read and parse CSV file with UTF-8 encoding
+        contents = file.file.read().decode('utf-8-sig')
         csv_reader = csv.reader(io.StringIO(contents))
         
         # Skip header if exists
@@ -64,13 +64,15 @@ def upload_csv(course_id: int, file: UploadFile = File(...), db: Session = Depen
             next(csv_reader)
         except StopIteration:
             raise HTTPException(status_code=400, detail="Empty CSV file")
+
+        # Prepare bulk insert
+        word_instances = []
+        learning_instances = []
         
-        # Process CSV rows
         for row in csv_reader:
-            if len(row) < 3:  # At minimum: word, pinyin, definition
+            if not row or len(row) < 3 or all(field.strip() == "" for field in row):
                 continue
-                
-            # Create word with available data
+
             word_data = {
                 "word": row[0],
                 "pinyin": row[1],
@@ -79,23 +81,26 @@ def upload_csv(course_id: int, file: UploadFile = File(...), db: Session = Depen
                 "audio_link": row[4] if len(row) > 4 else None,
                 "course_id": course_id
             }
-            
-            # Add word to database
+
             db_word = models.Word(**word_data)
-            db.add(db_word)
-            db.commit()
-            db.refresh(db_word)
-            
-            # Initialize learning data for the word
-            learning_data = models.LearningData(word_id=db_word.id)
-            db.add(learning_data)
-            
+            word_instances.append(db_word)
+
+        # Bulk save words
+        db.bulk_save_objects(word_instances)
         db.commit()
+
+        # Add learning data for each word
+        for word in word_instances:
+            learning_instances.append(models.LearningData(word_id=word.id))
         
+        db.bulk_save_objects(learning_instances)
+        db.commit()
+
         # Return updated course with words
         return db_course
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not process CSV file: {str(e)}")
+    
     finally:
         file.file.close()
