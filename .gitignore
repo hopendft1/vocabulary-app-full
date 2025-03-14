@@ -1,0 +1,24 @@
+# Python 缓存和数据库文件
+__pycache__/
+*.pyc
+*.pyo
+*.db
+
+# 环境和配置
+.env
+*.log
+*.lock
+
+# Node.js 依赖和打包产物
+node_modules/
+*.lock
+package-lock.json
+
+# IDE 和编辑器配置
+.vscode/
+.idea/
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+ 
