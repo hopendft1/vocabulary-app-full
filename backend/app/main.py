@@ -27,10 +27,3 @@ app.include_router(words.router)
 def read_root():
     return {"message": "Welcome to Vocabulary Learning API"}
 
-# Use environment port (important for Railway)
-port = int(os.getenv("PORT", 8000))
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
-
