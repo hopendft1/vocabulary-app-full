@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "词汇学习",
+    "slug": "vocabulary-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4B79A1"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4B79A1"
+      },
+      "package": "com.vocabulary.learning"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "newArchEnabled": true,
+    "extra": {
+      "eas": {
+        "projectId": "1f4ed0d2-ff5b-4e86-b2d4-d3e057f1ee12"
+      }
+    },
+    "owner": "hopendft"
+  }
+}
