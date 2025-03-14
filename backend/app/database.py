@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 SQLALCHEMY_DATABASE_URL = "sqlite:///./vocabulary.db"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL = "postgresql://user:password@host:port/dbname"  # 从 Render 获取连接字符串
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
