@@ -43,34 +43,44 @@ const CourseScreen = ({ route, navigation }) => {
   };
 
   const handleUploadCSV = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ 
-      type: ['text/csv', 'text/comma-separated-values', 'application/octet-stream'],
-      copyToCacheDirectory: true,
-     });
-    if (result.type === 'success') {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', 'application/octet-stream'],
+        copyToCacheDirectory: true,
+      });
+  
+      if (result.type !== 'success') {
+        Alert.alert('取消', '文件选择已取消');
+        return;
+      }
+  
       const formData = new FormData();
       formData.append('file', {
         uri: result.uri,
         name: result.name,
         type: 'text/csv',
       });
-
-      try {
-        const uploadUrl = `${API_URL}/courses/${courseId}/upload-csv`;
-        const response = await fetch(uploadUrl, {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await response.json();
-        Alert.alert('成功', '上传成功');
-        fetchWords();
-      } catch (error) {
-        Alert.alert('错误', '上传失败: ' + error.message);
+  
+      const uploadUrl = `${API_URL}/courses/${courseId}/upload-csv`;
+  
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData,
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || '上传失败');
       }
-    } else {
-      Alert.alert('取消', '文件选择已取消');
+  
+      const data = await response.json();
+      Alert.alert('成功', '上传成功');
+      fetchWords();
+    } catch (error) {
+      Alert.alert('错误', `上传失败: ${error.message}`);
     }
   };
+  
 
   const handleDeleteWord = async (wordId) => {
     Alert.alert(
