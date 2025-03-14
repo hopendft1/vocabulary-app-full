@@ -7,6 +7,8 @@ import io
 from .. import models, schemas
 from ..database import get_db
 
+
+
 router = APIRouter(
     prefix="/courses",
     tags=["courses"],
@@ -14,7 +16,7 @@ router = APIRouter(
 )
 
 @router.delete("/{course_id}", response_model=schemas.Course)
-def delete_course(course_id: int, db: Session = Depends(database.get_db)):
+def delete_course(course_id: int, db: Session = Depends(get_db)):
     course = db.query(models.Course).filter(models.Course.id == course_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")

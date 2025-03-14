@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 @router.delete("/{word_id}", response_model=schemas.Word)
-def delete_word(word_id: int, db: Session = Depends(database.get_db)):
+def delete_word(word_id: int, db: Session = Depends(get_db)):
     word = db.query(models.Word).filter(models.Word.id == word_id).first()
     if not word:
         raise HTTPException(status_code=404, detail="Word not found")
@@ -44,7 +44,7 @@ def read_word(word_id: int, db: Session = Depends(get_db)):
     return db_word
 
 @router.put("/{word_id}/mark-difficult", response_model=schemas.Word)
-def mark_word_as_difficult(word_id: int, db: Session = Depends(database.get_db)):
+def mark_word_as_difficult(word_id: int, db: Session = Depends(get_db)):
     word = db.query(models.Word).filter(models.Word.id == word_id).first()
     if not word:
         raise HTTPException(status_code=404, detail="Word not found")
