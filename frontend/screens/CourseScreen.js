@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Button } fro
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system'
+
 
 const API_URL = 'https://vocabulary-app-full.onrender.com';
 
@@ -42,44 +44,103 @@ const CourseScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleUploadCSV = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'text/comma-separated-values', 'application/octet-stream'],
-        copyToCacheDirectory: true,
-      });
   
-      if (result.type !== 'success') {
-        Alert.alert('取消', '文件选择已取消');
-        return;
-      }
-  
-      const formData = new FormData();
-      formData.append('file', {
-        uri: result.uri,
-        name: result.name,
-        type: 'text/csv',
-      });
-  
-      const uploadUrl = `${API_URL}/courses/${courseId}/upload-csv`;
-  
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
-      });
-  
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || '上传失败');
-      }
-  
-      const data = await response.json();
-      Alert.alert('成功', '上传成功');
-      fetchWords();
-    } catch (error) {
-      Alert.alert('错误', `上传失败: ${error.message}`);
+
+
+const API_URL = 'https://vocabulary-app-full.onrender.com'; // Adjust this to your backend URL
+
+const handleUploadCSV = async () => {
+  try {
+    console.log('Starting CSV upload process...');
+
+    // Step 1: Pick the CSV file
+    const result = await DocumentPicker.getDocumentAsync({
+      type: [
+        'text/csv',
+        'text/comma-separated-values',
+        'application/csv',
+        'application/vnd.ms-excel',
+        'application/octet-stream',
+        'text/plain',
+      ],
+      copyToCacheDirectory: true,
+    });
+
+    console.log('Document Picker Result:', JSON.stringify(result, null, 2));
+
+    if (result.canceled) {
+      console.log('File selection canceled by user.');
+      Alert.alert('提示', '文件选择已取消');
+      return;
     }
-  };
+
+    const asset = result.assets[0];
+    const fileName = asset.name.toLowerCase();
+
+    // Step 2: Validate file extension
+    if (!fileName.endsWith('.csv')) {
+      console.log('Invalid file type selected:', fileName);
+      Alert.alert('错误', '请选择一个 CSV 文件');
+      return;
+    }
+
+    // Step 3: Read file content (for debugging)
+    const fileContent = await FileSystem.readAsStringAsync(asset.uri);
+    console.log('File Content Preview (first 500 characters):', fileContent.substring(0, 500));
+
+    // Step 4: Prepare FormData for upload
+    const formData = new FormData();
+    formData.append('file', {
+      uri: asset.uri,
+      name: asset.name || 'uploaded_file.csv',
+      type: 'text/csv',
+    });
+
+    const uploadUrl = `${API_URL}/courses/${courseId}/upload-csv`;
+    console.log('Uploading to URL:', uploadUrl);
+
+    // Step 5: Send the request and log the raw response
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    // Log the HTTP status and headers
+    console.log('Response Status:', response.status);
+    console.log('Response Headers:', JSON.stringify([...response.headers], null, 2));
+
+    // Get the raw response text
+    const responseText = await response.text();
+    console.log('Raw Backend Response:', responseText);
+
+    // Step 6: Check if the response is OK
+    if (!response.ok) {
+      console.log('Upload failed with status:', response.status);
+      throw new Error(`Upload failed: ${responseText}`);
+    }
+
+    // Step 7: Try to parse the response as JSON
+    try {
+      const jsonResponse = JSON.parse(responseText);
+      console.log('Parsed JSON Response:', JSON.stringify(jsonResponse, null, 2));
+    } catch (parseError) {
+      console.error('Failed to parse response as JSON:', parseError.message);
+      throw new Error(`JSON Parse Error: ${parseError.message}`);
+    }
+
+    // Step 8: If everything is good, show success
+    Alert.alert('成功', 'CSV 上传成功');
+    fetchWords(); // Refresh the word list (assuming this is a function in your component)
+
+  } catch (error) {
+    console.error('Upload Error:', error.message);
+    Alert.alert('错误', '上传失败: ' + error.message);
+  }
+};
+  
   
 
   const handleDeleteWord = async (wordId) => {
