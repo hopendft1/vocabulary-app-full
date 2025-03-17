@@ -20,13 +20,24 @@ const CourseScreen = ({ route, navigation }) => {
     fetchWords();
   }, [page, courseId, isOffline]);
 
+  
+
   const fetchWords = async () => {
     try {
       setLoading(true);
       const skip = (page - 1) * WORDS_PER_PAGE;
       let fetchedWords = [];
       const courseDir = `${FileSystem.documentDirectory}courses/${courseId}/`;
+      console.log('CourseId:', courseId);
       const fileExists = (await FileSystem.getInfoAsync(`${courseDir}words.json`)).exists;
+
+      const { courseId, courseTitle, isOffline = false } = route.params || {};
+        if (!courseId) {
+          console.error('No courseId in route.params');
+          setWords([]);
+          setTotalPages(0);
+          return;
+        }
 
       if (fileExists) {
         const wordsJson = await FileSystem.readAsStringAsync(`${courseDir}words.json`);
@@ -106,7 +117,7 @@ const CourseScreen = ({ route, navigation }) => {
             course_id: courseId,
             word: word.word,
             pinyin: word.pinyin,
-            definition: word.definition,
+            definition: word.meaning || word.definition || 'N/A',
             example: word.example || '',
             audio_link: word.audio_link || '',
           }))),

@@ -28,6 +28,9 @@ app.include_router(words.router,prefix="/words")
 Base.metadata.create_all(bind=engine)
 
 @app.get("/")
+@app.get("/words")
+def get_words(course_id: int):
+    return {"message": f"Words for course {course_id}"}
 @app.head("/")
 def read_root():
     return {"message": "Welcome to Vocabulary Learning API"}

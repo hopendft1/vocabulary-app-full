@@ -50,7 +50,6 @@ from app.database import get_db
 from app.models import Word, LearningData
 from app.schemas import WordCreate, WordWithLearningData
 
-router = APIRouter()
 
 @router.post("/bulk", response_model=List[WordWithLearningData])
 def create_words_bulk(words: List[WordCreate], db: Session = Depends(get_db)):
