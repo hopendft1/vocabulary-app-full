@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import sys
 import os
-import models
+from app import models
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from database import engine, Base
 from .routers import courses, words
