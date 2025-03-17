@@ -2,7 +2,7 @@ from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, Float
 from sqlalchemy.orm import relationship
 import datetime
 
-from database import Base
+from .database import Base
 
 class Course(Base):
     __tablename__ = "courses"
