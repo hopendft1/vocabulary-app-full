@@ -4,7 +4,7 @@ import sys
 import os
 from app import models
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from database import engine, Base
+from .database import engine, Base
 from .routers import courses, words
 
 # Create database tables
