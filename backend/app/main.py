@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import sys
 import os
-
-from .database import engine, Base
+import models
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from database import engine, Base
 from .routers import courses, words
 
 # Create database tables
@@ -21,7 +23,9 @@ app.add_middleware(
 
 # Include routers
 app.include_router(courses.router)
-app.include_router(words.router)
+app.include_router(words.router,prefix="/words")
+
+Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 @app.head("/")

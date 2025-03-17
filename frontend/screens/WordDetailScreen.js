@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Audio } from 'expo-av';
@@ -5,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 const WordDetailScreen = ({ route, navigation }) => {
-  const { word } = route.params;
+  const { word, courseId, isOffline } = route.params;
   const [sound, setSound] = useState();
   const [showMemoryTip, setShowMemoryTip] = useState(false);
   const [memoryTip, setMemoryTip] = useState('');
@@ -38,21 +39,34 @@ const WordDetailScreen = ({ route, navigation }) => {
   };
 
   const playSound = async () => {
-    // 如果有音频链接，播放音频
     if (word.audio_link) {
       try {
         if (sound) {
           await sound.unloadAsync();
         }
-        
+  
+        let audioUri = word.audio_link;
+        if (isOffline) {
+          const audioFileName = word.audio_link.split('/').pop();
+          const filePath = `${FileSystem.documentDirectory}courses/${courseId}/audio/${audioFileName}`;
+          const fileInfo = await FileSystem.getInfoAsync(filePath);
+          if (!fileInfo.exists) {
+            console.error('Audio file not found:', filePath);
+            Alert.alert('错误', '音频文件未找到，请确保已下载离线资源。');
+            return;
+          }
+          audioUri = filePath;
+        }
+  
         const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: word.audio_link },
+          { uri: audioUri },
           { shouldPlay: true }
         );
         
         setSound(newSound);
       } catch (error) {
         console.error('Error playing sound:', error);
+        Alert.alert('错误', '播放音频失败，请检查网络或音频链接。');
       }
     }
   };

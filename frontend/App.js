@@ -21,7 +21,7 @@ export default function App() {
           initialRouteName="MainTabs"
           screenOptions={{
             headerStyle: {
-              backgroundColor: '#4B79A1',
+              backgroundColor: '#042634',
             },
             headerTintColor: '#fff',
             headerTitleStyle: {

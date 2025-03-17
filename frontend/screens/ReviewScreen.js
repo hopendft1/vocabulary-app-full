@@ -1,25 +1,59 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 
 const API_URL = 'https://vocabulary-app-full.onrender.com'; // For Android emulator
 
-const ReviewScreen = ({ navigation }) => {
+const LearningMode = {
+  SELECT_DEFINITION: 'select_definition',
+  SELECT_WORD: 'select_word',
+  SELECT_PRONUNCIATION: 'select_pronunciation',
+  SPELL_WORD: 'spell_word'
+};
+
+// Function to fetch words for the selected course (online or offline)
+const getSelectedCourseWords = async (courseId, isOffline, downloadedCourses) => {
+  let words = [];
+  if (isOffline || downloadedCourses.some(c => c.id === courseId)) {
+    const courseDir = `${FileSystem.documentDirectory}courses/${courseId}/`;
+    const wordsJson = await FileSystem.readAsStringAsync(`${courseDir}words.json`);
+    words = JSON.parse(wordsJson);
+  } else {
+    const response = await fetch(`${API_URL}/words?course_id=${courseId}`);
+    if (!response.ok) throw new Error('获取单词失败');
+    words = await response.json();
+  }
+  return words;
+};
+
+const ReviewScreen = ({ navigation, route }) => {
+  // Added missing state definitions
+  const [courseId, setCourseId] = useState(null);
+  const [isOffline, setIsOffline] = useState(false);
+  const [downloadedCourses, setDownloadedCourses] = useState([]);
+  const [loading, setLoading] = useState(true); // Added loading state
   const [reviewWords, setReviewWords] = useState([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [options, setOptions] = useState([]);
   const [isCorrect, setIsCorrect] = useState(null);
   const [sound, setSound] = useState(null);
   const [completed, setCompleted] = useState(false);
+  const [showWordCard, setShowWordCard] = useState(false);
+  const [learningMode, setLearningMode] = useState(LearningMode.SELECT_DEFINITION);
+  const [candidateChars, setCandidateChars] = useState([]);
+  const [selectedChars, setSelectedChars] = useState([]);
+  const [correctOptionIndex, setCorrectOptionIndex] = useState(null);
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState(null);
   const [stats, setStats] = useState({
     total: 0,
     correct: 0,
     incorrect: 0,
   });
-  
-  // 动画值
+
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pinyinFadeAnim = useRef(new Animated.Value(0)).current;
@@ -27,46 +61,134 @@ const ReviewScreen = ({ navigation }) => {
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    fetchReviewWords();
-    
-    return () => {
-      if (sound) sound.unloadAsync();
+    const initializeCourse = async () => {
+      setLoading(true);
+      try {
+        const paramsCourseId = route?.params?.courseId;
+        const paramsIsOffline = route?.params?.isOffline || false;
+
+        if (paramsCourseId) {
+          setCourseId(paramsCourseId);
+          setIsOffline(paramsIsOffline);
+        } else {
+          const selectedCourseJson = await AsyncStorage.getItem('selectedCourse');
+          const selectedCourse = selectedCourseJson ? JSON.parse(selectedCourseJson) : null;
+          if (selectedCourse) {
+            setCourseId(selectedCourse.id);
+            const downloadedCoursesJson = await AsyncStorage.getItem('downloadedCourses');
+            const downloaded = downloadedCoursesJson ? JSON.parse(downloadedCoursesJson) : [];
+            setDownloadedCourses(downloaded);
+            setIsOffline(downloaded.some(c => c.id === selectedCourse.id));
+          } else {
+            Alert.alert('错误', '未找到选中的课程，请在“我的课程”中选择一个课程');
+            setLoading(false);
+            navigation.goBack();
+            return;
+          }
+        }
+      } catch (error) {
+        Alert.alert('错误', `初始化课程失败：${error.message}`);
+        setLoading(false);
+        navigation.goBack();
+      }
     };
-  }, []);
+
+    initializeCourse();
+  }, [route?.params, navigation]);
+
+  useEffect(() => {
+    const fetchWords = async () => {
+      if (!courseId) {
+        Alert.alert('错误', '请先在“我的课程”选项卡中选择一个课程');
+        setLoading(false);
+        navigation.goBack();
+        return;
+      }
+
+      try {
+        const storedDownloadedCourses = await AsyncStorage.getItem('downloadedCourses');
+        const downloaded = storedDownloadedCourses ? JSON.parse(storedDownloadedCourses) : [];
+        setDownloadedCourses(downloaded);
+
+        const fetchedWords = await getSelectedCourseWords(courseId, isOffline, downloaded);
+        if (fetchedWords.length === 0) {
+          Alert.alert('提示', '该课程没有单词，请先添加单词');
+          setLoading(false);
+          navigation.goBack();
+          return;
+        }
+
+        let filteredWords = fetchedWords;
+        let noWordsMessage = '';
+
+        switch (route.name) {
+          case 'Learn':
+            filteredWords = fetchedWords.filter(word => !word.is_learned);
+            noWordsMessage = '没有新单词可学';
+            break;
+          case 'Review':
+            filteredWords = fetchedWords.filter(word => word.is_learned);
+            noWordsMessage = '没有已学单词可复习';
+            break;
+          case 'Difficult':
+            filteredWords = fetchedWords.filter(word => word.is_difficult);
+            noWordsMessage = '没有难词可练习';
+            break;
+          case 'Practice':
+            filteredWords = fetchedWords.filter(word => word.is_learned && word.is_difficult);
+            noWordsMessage = '没有已学且标记为难词的单词可练习';
+            break;
+          default:
+            filteredWords = [];
+            noWordsMessage = '未知的页面，无法加载单词';
+        }
+
+        if (filteredWords.length === 0) {
+          Alert.alert('提示', noWordsMessage);
+          setLoading(false);
+          navigation.goBack();
+          return;
+        }
+
+        setReviewWords(filteredWords);
+        setStats(prev => ({ ...prev, total: filteredWords.length }));
+      } catch (error) {
+        Alert.alert('错误', `无法加载单词：${error.message}`);
+        setLoading(false);
+        navigation.goBack();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (courseId) {
+      fetchWords();
+    }
+  }, [courseId, isOffline, route.name]);
 
   useEffect(() => {
     if (reviewWords.length > 0 && currentWordIndex < reviewWords.length) {
-      generateOptions();
+      selectLearningMode();
+
+      if (learningMode === LearningMode.SELECT_DEFINITION ||
+          learningMode === LearningMode.SELECT_WORD ||
+          learningMode === LearningMode.SELECT_PRONUNCIATION) {
+        generateOptions();
+      } else if (learningMode === LearningMode.SPELL_WORD) {
+        generateCandidateChars();
+      }
+
       animateNewQuestion();
     }
-  }, [reviewWords, currentWordIndex]);
+  }, [reviewWords, currentWordIndex, learningMode]);
 
-  const fetchReviewWords = async () => {
-    try {
-      const response = await fetch(`${API_URL}/words/review/due`);
-      
-      if (!response.ok) {
-        throw new Error('获取复习单词失败');
-      }
-      
-      const data = await response.json();
-      if (data.length > 0) {
-        setReviewWords(data);
-        setStats(prev => ({ ...prev, total: data.length }));
-      } else {
-        alert('没有需要复习的单词');
-        navigation.goBack();
-      }
-    } catch (error) {
-      alert(error.message);
-      navigation.goBack();
-    }
-  };
+  const handleDeleteWord = async () => {
+    const currentWord = reviewWords[currentWordIndex];
+    if (!currentWord) return;
 
-  const handleDeleteWord = async (wordId) => {
     Alert.alert(
       '确认删除',
-      '确定要删除这个单词吗？您将不再学习此单词。',
+      '确定要删除这个单词吗？此操作不可逆。',
       [
         { text: '取消', style: 'cancel' },
         {
@@ -74,18 +196,12 @@ const ReviewScreen = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              const response = await fetch(`${API_URL}/words/${wordId}`, {
-                method: 'DELETE',
-              });
-
-              if (!response.ok) {
-                throw new Error('删除单词失败');
+              if (!isOffline) {
+                await fetch(`${API_URL}/words/${currentWord.id}`, { method: 'DELETE' });
               }
-
-              fetchWords();
-              if (currentIndex >= words.length - 1) {
-                setCurrentIndex(currentIndex - 1);
-              }
+              const updatedWords = reviewWords.filter(w => w.id !== currentWord.id);
+              setReviewWords(updatedWords);
+              if (currentWordIndex >= updatedWords.length) setCurrentWordIndex(updatedWords.length - 1);
             } catch (error) {
               Alert.alert('错误', error.message);
             }
@@ -95,46 +211,90 @@ const ReviewScreen = ({ navigation }) => {
     );
   };
 
-  const handleMarkAsDifficult = async (wordId) => {
+  const handleMarkAsDifficult = async () => {
+    const currentWord = reviewWords[currentWordIndex];
+    if (!currentWord) return;
+
     try {
-      const response = await fetch(`${API_URL}/words/${wordId}/mark-difficult`, {
-        method: 'PUT',
-      });
-
-      if (!response.ok) {
-        throw new Error('标记为难词失败');
+      if (!isOffline) {
+        await fetch(`${API_URL}/words/${currentWord.id}/mark-difficult`, { method: 'PUT' });
       }
-
-      fetchWords(); // 刷新单词列表
-      Alert.alert('成功', '单词已标记为难词');
+      Alert.alert('成功', '单词已标记为难词！');
     } catch (error) {
       Alert.alert('错误', error.message);
     }
   };
 
+  const selectLearningMode = () => {
+    const currentWord = reviewWords[currentWordIndex];
+
+    const availableModes = [
+      LearningMode.SELECT_DEFINITION,
+      LearningMode.SELECT_WORD,
+      LearningMode.SPELL_WORD
+    ];
+
+    if (currentWord && currentWord.audio_link) {
+      availableModes.push(LearningMode.SELECT_PRONUNCIATION);
+    }
+
+    const randomIndex = Math.floor(Math.random() * availableModes.length);
+    setLearningMode(availableModes[randomIndex]);
+  };
+
   const generateOptions = () => {
     if (reviewWords.length < 4) return;
-    
+
     const correctWord = reviewWords[currentWordIndex];
     let allOptions = [correctWord];
-    
-    // 从其他单词中随机选择3个作为错误选项
+
     const otherWords = reviewWords.filter((_, index) => index !== currentWordIndex);
     const shuffled = [...otherWords].sort(() => 0.5 - Math.random());
     allOptions = [...allOptions, ...shuffled.slice(0, 3)];
-    
-    // 打乱选项顺序
-    setOptions(allOptions.sort(() => 0.5 - Math.random()));
+
+    const shuffledOptions = allOptions.sort(() => 0.5 - Math.random());
+    setOptions(shuffledOptions);
+
+    const correctIndex = shuffledOptions.findIndex(option => option.id === correctWord.id);
+    setCorrectOptionIndex(correctIndex);
+    setSelectedOptionIndex(null);
+  };
+
+  const generateCandidateChars = () => {
+    const currentWord = reviewWords[currentWordIndex];
+    if (!currentWord) return;
+
+    const wordChars = currentWord.word.split('');
+
+    let candidatePool = [...wordChars];
+
+    const allChars = reviewWords.reduce((chars, word) => {
+      return chars.concat(word.word.split(''));
+    }, []);
+
+    const uniqueChars = [...new Set(allChars)];
+
+    const randomChars = uniqueChars
+      .filter(char => !wordChars.includes(char))
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 10 - wordChars.length);
+
+    candidatePool = candidatePool.concat(randomChars);
+
+    while (candidatePool.length < 10) {
+      candidatePool.push(randomChars[Math.floor(Math.random() * randomChars.length)]);
+    }
+
+    setCandidateChars(candidatePool.sort(() => 0.5 - Math.random()));
+    setSelectedChars([]);
   };
 
   const animateNewQuestion = () => {
-    // 重置动画值
     fadeAnim.setValue(0);
     slideAnim.setValue(300);
     pinyinFadeAnim.setValue(0);
     pinyinBounceAnim.setValue(0.9);
-    
-    // 执行动画
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -151,7 +311,6 @@ const ReviewScreen = ({ navigation }) => {
   };
 
   const showPinyinAnimation = () => {
-    // 拼音淡入弹跳动画
     Animated.parallel([
       Animated.timing(pinyinFadeAnim, {
         toValue: 1,
@@ -165,8 +324,7 @@ const ReviewScreen = ({ navigation }) => {
         useNativeDriver: true,
       })
     ]).start();
-    
-    // 播放音频
+
     playSound();
   };
 
@@ -176,8 +334,7 @@ const ReviewScreen = ({ navigation }) => {
 
   const animateIncorrectAnswer = () => {
     showPinyinAnimation();
-    
-    // 抖动动画
+
     Animated.sequence([
       Animated.timing(shakeAnim, {
         toValue: 10,
@@ -203,56 +360,126 @@ const ReviewScreen = ({ navigation }) => {
   };
 
   const playSound = async () => {
-    if (reviewWords.length === 0 || currentWordIndex >= reviewWords.length) return;
-    
     const currentWord = reviewWords[currentWordIndex];
-    if (!currentWord.audio_link) return;
-    
+    if (!currentWord || !currentWord.audio_link) return;
+
     try {
-      if (sound) {
-        await sound.unloadAsync();
+      if (sound) await sound.unloadAsync();
+
+      let audioUri = currentWord.audio_link;
+      if (isOffline) {
+        const audioFileName = currentWord.audio_link.split('/').pop();
+        const filePath = `${FileSystem.documentDirectory}courses/${courseId}/audio/${audioFileName}`;
+        const fileInfo = await FileSystem.getInfoAsync(filePath);
+        if (!fileInfo.exists) {
+          console.error('Audio file not found:', filePath);
+          Alert.alert('错误', '音频文件未找到，请确保已下载离线资源。');
+          return;
+        }
+        audioUri = filePath;
       }
-      
+
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: currentWord.audio_link },
+        { uri: audioUri },
         { shouldPlay: true }
       );
-      
       setSound(newSound);
     } catch (error) {
       console.error('Error playing sound:', error);
+      Alert.alert('错误', '播放音频失败，请检查网络或音频链接。');
     }
   };
 
-  const handleOptionSelect = async (option) => {
-    const correct = option.id === reviewWords[currentWordIndex].id;
+  const handleOptionSelect = async (option, index) => {
+    let correct = false;
+
+    if (learningMode === LearningMode.SELECT_DEFINITION ||
+        learningMode === LearningMode.SELECT_PRONUNCIATION) {
+      correct = option.id === reviewWords[currentWordIndex].id;
+    } else if (learningMode === LearningMode.SELECT_WORD) {
+      correct = option.word === reviewWords[currentWordIndex].word;
+    }
+
     setIsCorrect(correct);
-    
+    setSelectedOptionIndex(index);
+
     if (correct) {
       animateCorrectAnswer();
       setStats(prev => ({ ...prev, correct: prev.correct + 1 }));
     } else {
       animateIncorrectAnswer();
       setStats(prev => ({ ...prev, incorrect: prev.incorrect + 1 }));
+      setTimeout(() => {
+        setShowWordCard(true);
+      }, 1000);
     }
-    
-    // 更新学习数据
+
     await updateLearningData(correct);
-    
-    // 延迟后移动到下一个问题
+  };
+
+  const handleCharSelect = (char, index) => {
+    const currentWord = reviewWords[currentWordIndex];
+    if (selectedChars.length >= currentWord.word.length) return;
+
+    setSelectedChars([...selectedChars, char]);
+
+    const newCandidates = [...candidateChars];
+    newCandidates.splice(index, 1);
+    setCandidateChars(newCandidates);
+
     setTimeout(() => {
-      if (currentWordIndex < reviewWords.length - 1) {
-        setCurrentWordIndex(currentWordIndex + 1);
-        setIsCorrect(null);
-      } else {
-        setCompleted(true);
+      const updatedSelected = [...selectedChars, char];
+      if (updatedSelected.length === currentWord.word.length) {
+        const spelled = updatedSelected.join('');
+        const correct = spelled === currentWord.word;
+
+        setIsCorrect(correct);
+
+        if (correct) {
+          animateCorrectAnswer();
+          setStats(prev => ({ ...prev, correct: prev.correct + 1 }));
+        } else {
+          animateIncorrectAnswer();
+          setStats(prev => ({ ...prev, incorrect: prev.incorrect + 1 }));
+          setTimeout(() => {
+            setShowWordCard(true);
+          }, 1000);
+        }
+
+        updateLearningData(correct);
       }
-    }, 2000);
+    }, 100);
+  };
+
+  const handleNextWord = () => {
+    if (showWordCard) {
+      setShowWordCard(false);
+      setTimeout(() => {
+        moveToNextWord();
+      }, 300);
+    } else {
+      moveToNextWord();
+    }
+  };
+
+  const moveToNextWord = () => {
+    if (currentWordIndex < reviewWords.length - 1) {
+      setCurrentWordIndex(currentWordIndex + 1);
+      setIsCorrect(null);
+      setSelectedOptionIndex(null);
+    } else {
+      setCompleted(true);
+    }
   };
 
   const updateLearningData = async (correct) => {
     try {
       const currentWord = reviewWords[currentWordIndex];
+
+      if (isOffline) {
+        return;
+      }
+
       await fetch(`${API_URL}/words/${currentWord.id}/update-learning-data`, {
         method: 'POST',
         headers: {
@@ -265,11 +492,40 @@ const ReviewScreen = ({ navigation }) => {
     }
   };
 
+  const handlePlayAgain = () => {
+    setCurrentWordIndex(0);
+    setIsCorrect(null);
+    setShowWordCard(false);
+    setCompleted(false);
+    setStats({
+      total: reviewWords.length,
+      correct: 0,
+      incorrect: 0,
+    });
+
+    setReviewWords(prev => [...prev].sort(() => 0.5 - Math.random()));
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#4B79A1', '#283E51']} style={styles.container}>
+        <View style={styles.container}>
+          <Text style={styles.loadingText}>加载中...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
   if (reviewWords.length === 0) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.loadingText}>加载中...</Text>
-      </View>
+      <LinearGradient colors={['#4B79A1', '#283E51']} style={styles.container}>
+        <View style={styles.container}>
+          <Text style={styles.loadingText}>没有已学单词可复习</Text>
+          <TouchableOpacity style={styles.button} onPress={() => navigation.goBack()}>
+            <Text style={styles.buttonText}>返回</Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
     );
   }
 
@@ -280,57 +536,14 @@ const ReviewScreen = ({ navigation }) => {
         style={styles.container}
       >
         <View style={styles.completedContainer}>
-          <Text style={styles.completedTitle}>复习完成!</Text>
-          
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.total}</Text>
-              <Text style={styles.statLabel}>总计单词</Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, styles.correctValue]}>{stats.correct}</Text>
-              <Text style={styles.statLabel}>正确</Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, styles.incorrectValue]}>{stats.incorrect}</Text>
-              <Text style={styles.statLabel}>错误</Text>
-            </View>
-          </View>
-          
-          <View style={styles.accuracyContainer}>
-            <Text style={styles.accuracyLabel}>正确率</Text>
-            <Text style={styles.accuracyValue}>
-              {Math.round((stats.correct / stats.total) * 100)}%
-            </Text>
-          </View>
-          
-          <Text style={styles.feedbackText}>
-            {stats.correct === stats.total
-              ? '太棒了！你已经完全掌握了这些单词。'
-              : stats.correct > stats.total * 0.8
-                ? '做得很好！继续保持，你已经掌握了大部分单词。'
-                : stats.correct > stats.total * 0.6
-                  ? '不错的表现！多加练习，你会做得更好。'
-                  : '继续努力！多多练习这些单词，你会进步的。'}
+          <Text style={styles.completedText}>复习完成！</Text>
+          <Text style={styles.statsText}>
+            总计: {stats.total} | 正确: {stats.correct} | 错误: {stats.incorrect}
           </Text>
-          
-          <View style={styles.nextReviewContainer}>
-            <Text style={styles.nextReviewLabel}>下次复习</Text>
-            <Text style={styles.nextReviewValue}>
-              {stats.correct > stats.total * 0.8
-                ? '3天后'
-                : stats.correct > stats.total * 0.6
-                  ? '1天后'
-                  : '今天晚些时候'}
-            </Text>
-          </View>
-          
-          <TouchableOpacity 
-            style={styles.button} 
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.button} onPress={handlePlayAgain}>
+            <Text style={styles.buttonText}>再玩一次</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.button} onPress={() => navigation.goBack()}>
             <Text style={styles.buttonText}>返回</Text>
           </TouchableOpacity>
         </View>
@@ -346,52 +559,46 @@ const ReviewScreen = ({ navigation }) => {
       style={styles.container}
     >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>今日复习</Text>
-        <Text style={styles.progressText}>
-          {currentWordIndex + 1} / {reviewWords.length}
+        <Text style={styles.headerTitle}>
+          {route.params?.screenTitle || '复习'}
+        </Text>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleDeleteWord}>
+            <Ionicons name="trash" size={24} color="#FF5722" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={handleMarkAsDifficult}>
+            <Ionicons name="alert-circle" size={24} color="#FF9800" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.progressContainer}>
+        <View style={[styles.progressBar, { width: `${(currentWordIndex + 1) / reviewWords.length * 100}%` }]} />
+      </View>
+
+      <View style={styles.statsContainer}>
+        <Text style={styles.statsText}>
+          正确: {stats.correct} | 错误: {stats.incorrect}
         </Text>
       </View>
-      
+
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Animated.View 
+        <Animated.View
           style={[
             styles.card,
             {
               opacity: fadeAnim,
               transform: [
-                { translateY: slideAnim },
-                { translateX: isCorrect === false ? shakeAnim : 0 }
+                { translateX: slideAnim },
+                { translateX: shakeAnim }
               ]
             }
           ]}
         >
-          <View style={styles.questionContainer}>
-            <Text style={styles.questionText}>{currentWord.definition}</Text>
-            
-            <View style={styles.optionsContainer}>
-              {options.map((option, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.optionButton,
-                    isCorrect !== null && option.id === currentWord.id ? styles.correctOption : {},
-                    isCorrect === false && option.id === reviewWords[currentWordIndex].id ? styles.highlightCorrect : {}
-                  ]}
-                  onPress={() => isCorrect === null ? handleOptionSelect(option) : null}
-                  disabled={isCorrect !== null}
-                >
-                  <Text style={[
-                    styles.optionText,
-                    isCorrect !== null && option.id === currentWord.id ? styles.correctOptionText : {}
-                  ]}>
-                    {option.word}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
+          <View style={styles.wordContainer}>
+            <Text style={styles.wordText}>{currentWord.word}</Text>
             {isCorrect !== null && (
-              <Animated.View 
+              <Animated.View
                 style={[
                   styles.pinyinContainer,
                   {
@@ -403,29 +610,137 @@ const ReviewScreen = ({ navigation }) => {
                 <Text style={styles.pinyinText}>{currentWord.pinyin}</Text>
               </Animated.View>
             )}
-            
-            {isCorrect !== null && (
-              <View style={styles.resultContainer}>
-                <Ionicons 
-                  name={isCorrect ? "checkmark-circle" : "close-circle"} 
-                  size={24} 
-                  color={isCorrect ? "#4CAF50" : "#FF5722"} 
-                />
-                <Text style={[
-                  styles.resultText,
-                  isCorrect ? styles.correctText : styles.incorrectText
-                ]}>
-                  {isCorrect ? "正确!" : "错误"}
-                </Text>
+          </View>
+
+          {learningMode === LearningMode.SELECT_DEFINITION && (
+            <View style={styles.questionContainer}>
+              <Text style={styles.questionText}>选择正确的释义</Text>
+              <View style={styles.optionsContainer}>
+                {options.map((option, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.optionButton,
+                      selectedOptionIndex === index && styles.selectedOption,
+                      isCorrect !== null && index === correctOptionIndex && styles.correctOption,
+                      isCorrect !== null && selectedOptionIndex === index && isCorrect === false && styles.incorrectOption
+                    ]}
+                    onPress={() => handleOptionSelect(option, index)}
+                    disabled={isCorrect !== null}
+                  >
+                    <Text style={styles.optionText}>{option.definition}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
-            
-            {isCorrect !== null && currentWord.example && (
-              <View style={styles.exampleContainer}>
-                <Text style={styles.exampleLabel}>例句:</Text>
-                <Text style={styles.exampleText}>{currentWord.example}</Text>
+            </View>
+          )}
+
+          {learningMode === LearningMode.SELECT_WORD && (
+            <View style={styles.questionContainer}>
+              <Text style={styles.questionText}>选择正确的单词</Text>
+              <View style={styles.optionsContainer}>
+                {options.map((option, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.optionButton,
+                      selectedOptionIndex === index && styles.selectedOption,
+                      isCorrect !== null && index === correctOptionIndex && styles.correctOption,
+                      isCorrect !== null && selectedOptionIndex === index && isCorrect === false && styles.incorrectOption
+                    ]}
+                    onPress={() => handleOptionSelect(option, index)}
+                    disabled={isCorrect !== null}
+                  >
+                    <Text style={styles.optionText}>{option.word}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
+            </View>
+          )}
+
+          {learningMode === LearningMode.SELECT_PRONUNCIATION && currentWord.audio_link && (
+            <View style={styles.questionContainer}>
+              <Text style={styles.questionText}>选择正确的发音</Text>
+              <View style={styles.optionsContainer}>
+                {options.map((option, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.optionButton,
+                      selectedOptionIndex === index && styles.selectedOption,
+                      isCorrect !== null && index === correctOptionIndex && styles.correctOption,
+                      isCorrect !== null && selectedOptionIndex === index && isCorrect === false && styles.incorrectOption
+                    ]}
+                    onPress={() => {
+                      playSoundForOption(option, index);
+                    }}
+                    disabled={isCorrect !== null}
+                  >
+                    <Ionicons name="volume-high" size={24} color="#4B79A1" />
+                    <Text style={styles.optionText}>发音 {index + 1}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {learningMode === LearningMode.SPELL_WORD && (
+            <View style={styles.questionContainer}>
+              <Text style={styles.questionText}>填写正确的汉字</Text>
+              <View style={styles.spellingContainer}>
+                {Array.from({ length: currentWord.word.length }).map((_, index) => (
+                  <View key={index} style={styles.spellingSlot}>
+                    <Text style={styles.spellingChar}>{selectedChars[index] || ''}</Text>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.candidateContainer}>
+                {candidateChars.map((char, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.candidateButton}
+                    onPress={() => handleCharSelect(char, index)}
+                    disabled={isCorrect !== null}
+                  >
+                    <Text style={styles.candidateChar}>{char}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {showWordCard && (
+            <View style={styles.wordCard}>
+              <Text style={styles.wordCardText}>单词: {currentWord.word}</Text>
+              <Text style={styles.wordCardText}>拼音: {currentWord.pinyin}</Text>
+              <Text style={styles.wordCardText}>释义: {currentWord.definition}</Text>
+              {currentWord.example && (
+                <Text style={styles.wordCardText}>例句: {currentWord.example}</Text>
+              )}
+              {currentWord.audio_link && (
+                <TouchableOpacity style={styles.playButton} onPress={playSound}>
+                  <Ionicons name="volume-high" size={24} color="#fff" />
+                  <Text style={styles.playButtonText}>播放发音</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          <View style={styles.buttonContainer}>
+            {currentWord.audio_link && (
+              <TouchableOpacity style={styles.button} onPress={playSound}>
+                <Ionicons name="volume-high" size={24} color="#fff" />
+                <Text style={styles.buttonText}>播放发音</Text>
+              </TouchableOpacity>
             )}
+            <TouchableOpacity
+              style={[styles.button, styles.nextButton]}
+              onPress={handleNextWord}
+              disabled={isCorrect === null}
+            >
+              <Text style={styles.buttonText}>下一个</Text>
+              <Ionicons name="arrow-forward" size={24} color="#fff" />
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </ScrollView>
@@ -433,15 +748,29 @@ const ReviewScreen = ({ navigation }) => {
   );
 };
 
+const playSoundForOption = async (option, index) => {
+  const { sound, setSound } = useContext(SomeContext); // Assume a context for sound management
+  if (sound) await sound.unloadAsync();
+
+  let audioUri = option.audio_link;
+  if (isOffline) {
+    const audioFileName = option.audio_link.split('/').pop();
+    audioUri = `${FileSystem.documentDirectory}courses/${courseId}/audio/${audioFileName}`;
+  }
+
+  const { sound: newSound } = await Audio.Sound.createAsync(
+    { uri: audioUri },
+    { shouldPlay: true }
+  );
+  setSound(newSound);
+  handleOptionSelect(option, index);
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  loadingText: {
-    fontSize: 18,
-    color: '#fff',
-    textAlign: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -450,14 +779,29 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 20,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
+  actionButtons: {
+    flexDirection: 'row',
   },
-  progressText: {
-    fontSize: 16,
+  actionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  progressContainer: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: '100%',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
+  },
+  statsContainer: {
+    padding: 8,
+    alignItems: 'center',
+  },
+  statsText: {
     color: '#fff',
+    fontSize: 14,
   },
   scrollContent: {
     flexGrow: 1,
@@ -466,190 +810,175 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
+  },
+  wordContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  wordText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  pinyinContainer: {
+    marginTop: 8,
+  },
+  pinyinText: {
+    fontSize: 18,
+    color: '#4A90E2',
   },
   questionContainer: {
-    alignItems: 'center',
+    marginBottom: 20,
   },
   questionText: {
     fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 24,
+    fontWeight: 'bold',
     color: '#333',
-    lineHeight: 26,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   optionsContainer: {
-    width: '100%',
-    marginBottom: 20,
+    marginTop: 8,
   },
   optionButton: {
     backgroundColor: '#f5f5f5',
-    borderRadius: 8,
     padding: 16,
-    marginBottom: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  optionText: {
-    fontSize: 18,
-    color: '#333',
-  },
-  correctOption: {
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderColor: '#4CAF50',
-    borderWidth: 1,
-    transform: [{ scale: 1.05 }],
-  },
-  highlightCorrect: {
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderColor: '#4CAF50',
-    borderWidth: 1,
-  },
-  correctOptionText: {
-    color: '#4CAF50',
-    fontWeight: 'bold',
-  },
-  pinyinContainer: {
-    backgroundColor: '#f0f7ff',
     borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    minWidth: 150,
-    alignItems: 'center',
-  },
-  pinyinText: {
-    fontSize: 20,
-    color: '#4A90E2',
-    textAlign: 'center',
-  },
-  resultContainer: {
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  resultText: {
-    fontSize: 18,
+  selectedOption: {
+    borderColor: '#4B79A1',
+    borderWidth: 2,
+  },
+  correctOption: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#4CAF50',
+    borderWidth: 2,
+  },
+  incorrectOption: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#FF5722',
+    borderWidth: 2,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  spellingContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginVertical: 16,
+  },
+  spellingSlot: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 4,
+    backgroundColor: '#f9f9f9',
+  },
+  spellingChar: {
+    fontSize: 20,
+    color: '#333',
+  },
+  candidateContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginVertical: 16,
+  },
+  candidateButton: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#4B79A1',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 4,
+    backgroundColor: '#f0f8ff',
+  },
+  candidateChar: {
+    fontSize: 20,
+    color: '#4B79A1',
+  },
+  wordCard: {
+    backgroundColor: '#FFF3E0',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  wordCardText: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 8,
+  },
+  playButton: {
+    backgroundColor: '#4B79A1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  playButtonText: {
+    color: '#fff',
     fontWeight: 'bold',
     marginLeft: 8,
   },
-  correctText: {
-    color: '#4CAF50',
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
   },
-  incorrectText: {
-    color: '#FF5722',
-  },
-  exampleContainer: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+  button: {
+    backgroundColor: '#4B79A1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 12,
-    width: '100%',
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4,
   },
-  exampleLabel: {
-    fontSize: 14,
+  nextButton: {
+    backgroundColor: '#4CAF50',
+  },
+  buttonText: {
+    color: '#fff',
     fontWeight: 'bold',
-    color: '#666',
-    marginBottom: 4,
-  },
-  exampleText: {
-    fontSize: 16,
-    color: '#333',
-    fontStyle: 'italic',
+    marginHorizontal: 4,
   },
   completedContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
-  completedTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 24,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginBottom: 24,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
+  completedText: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 4,
+    marginBottom: 16,
   },
-  correctValue: {
-    color: '#4CAF50',
-  },
-  incorrectValue: {
-    color: '#FF5722',
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#e0e0e0',
-  },
-  accuracyContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    width: '80%',
-    marginBottom: 24,
-  },
-  accuracyLabel: {
-    fontSize: 16,
+  loadingText: {
+    fontSize: 18,
     color: '#fff',
-    marginBottom: 4,
-  },
-  accuracyValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  feedbackText: {
-    fontSize: 16,
     textAlign: 'center',
-    color: '#e0e0e0',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  nextReviewContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  nextReviewLabel: {
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 4,
-  },
-  nextReviewValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFC107',
-  },
-  button: {
-    backgroundColor: '#FFC107',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    minWidth: 150,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#333',
-    fontSize: 18,
-    fontWeight: 'bold',
   },
 });
 

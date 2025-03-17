@@ -31,7 +31,7 @@ class WordCreate(WordBase):
 
 class Word(WordBase):
     id: int
-    course_id: int
+    course_id: Optional[int] = None
     
     class Config:
         from_attributes = True

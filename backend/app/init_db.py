@@ -1,0 +1,6 @@
+import sys, os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from database import Base, engine
+import models
+Base.metadata.create_all(bind=engine)
+print("Tables created")
